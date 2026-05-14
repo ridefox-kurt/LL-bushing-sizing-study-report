@@ -3,7 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>LL Sizing Report - FOX</title>
+<title>LL SIZING REPORT — FOX FACTORY</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="style.css">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 </head>
@@ -11,11 +13,11 @@
 <header class="header">
 <div class="header-inner">
   <div class="header-brand">
-    <div class="header-logo">FOX</div>
-    <div><div class="header-title">LL Sizing Report</div><div class="header-subtitle">Lower Leg Installed Bushing Bore Analysis</div></div>
+    <div class="header-logo"><img src="FOX.jpg" alt="FOX" class="header-logo-img"></div>
+    <div><div class="header-title">LL SIZING REPORT</div><div class="header-subtitle">Lower Leg · Installed Bushing Bore Analysis</div></div>
   </div>
   <div style="display:flex;align-items:center;gap:12px;">
-    <button id="themeToggle" class="theme-toggle-btn" title="Toggle Theme"><span class="theme-icon-dark">D</span><span class="theme-icon-light">L</span></button>
+    <button id="themeToggle" class="theme-toggle-btn" title="Toggle Theme"><span class="theme-icon-dark">DARK</span><span class="theme-icon-light">LIGHT</span></button>
     <div id="statusIndicator" class="status-pill ready"><span style="font-size:10px">●</span><span>Ready</span></div>
   </div>
 </div>
@@ -43,13 +45,13 @@
       <label class="control-label">Batch Type</label>
       <div class="radio-group">
         <label class="radio-label"><input type="radio" name="batchType" value="raw"> Raw Material (mm)</label>
-        <label class="radio-label"><input type="radio" name="batchType" value="bushing_unsized"> Bushing ID - unsized (inch)</label>
-        <label class="radio-label"><input type="radio" name="batchType" value="bushing_sized" checked> Bushing ID - sized by
+        <label class="radio-label"><input type="radio" name="batchType" value="bushing_unsized"> Bushing ID — unsized (inch)</label>
+        <label class="radio-label"><input type="radio" name="batchType" value="bushing_sized" checked> Bushing ID — sized by
           <input id="sizerSize" class="sizer-input" type="text" value="1.34050" placeholder="x.xxxxx"> " sizer</label>
       </div>
     </div>
     <div class="import-row" style="justify-content:flex-end;gap:12px">
-      <button id="importBtn" class="btn btn-primary">+ Add Batch</button>
+      <button id="importBtn" class="btn btn-primary">Add Batch</button>
     </div>
     <div id="batchTableWrap" style="display:none">
       <table class="batch-table" id="batchTable"><thead><tr><th>#</th><th>Folder</th><th>Type</th><th>Files</th><th>Status</th><th></th></tr></thead><tbody></tbody></table>
@@ -82,7 +84,7 @@
 </div>
 </main>
 
-<footer class="footer">FOX Factory - LL Sizing Report Dashboard &nbsp;|&nbsp; Spec: 605-04-262 Rev G/02 &nbsp;|&nbsp; Data Source: Calypso CMM</footer>
+<footer class="footer">© 2026 FOX Factory, Inc. &nbsp;·&nbsp; LL Sizing Report &nbsp;·&nbsp; Spec 605-04-262 Rev G/02 &nbsp;·&nbsp; Source: Calypso CMM</footer>
 
 <script>
 const API = "";
@@ -133,12 +135,12 @@ function toggleTheme() {
 function tc() {
   const dark = getTheme() === "dark";
   return {
-    text: dark ? "#E8E8F0" : "#1A1A2E",
-    text2: dark ? "#8888A0" : "#555570",
-    grid: dark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.08)",
-    ptBorder: dark ? "#12121A" : "#FFF",
-    ttBg: dark ? "rgba(18,18,26,0.95)" : "rgba(255,255,255,0.95)",
-    ttBody: dark ? "#E8E8F0" : "#1A1A2E",
+    text: dark ? "#FFFFFF" : "#222222",
+    text2: dark ? "#BDBDBD" : "#7A7A7A",
+    grid: dark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.08)",
+    ptBorder: dark ? "#222222" : "#FFFFFF",
+    ttBg: dark ? "rgba(34,34,34,0.96)" : "rgba(255,255,255,0.96)",
+    ttBody: dark ? "#FFFFFF" : "#222222",
   };
 }
 
@@ -543,9 +545,9 @@ function createChart(canvasId, parts, batch, displayUnit) {
         },
         tooltip: {
           backgroundColor: theme.ttBg,
-          borderColor: "rgba(255,107,0,0.3)",
+          borderColor: "#FF6600",
           borderWidth: 1,
-          titleColor: "#FF8C33",
+          titleColor: "#FF6600",
           bodyColor: theme.ttBody,
           callbacks: {label: context => `  ${context.dataset.label}: ${context.parsed.y.toFixed(decimals)}${displayUnit === "inch" ? '"' : "mm"}`},
         },
@@ -614,8 +616,8 @@ async function exportReport() {
   const size = document.getElementById("sizeSelect").value;
   const generated = new Date().toLocaleString();
   let html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>LL Sizing Report</title>
-<style>body{font-family:Arial,sans-serif;max-width:1200px;margin:0 auto;padding:20px;color:#333}h1,h2{color:#FF6B00}h1{border-bottom:3px solid #FF6B00;padding-bottom:10px}table{width:100%;border-collapse:collapse;margin:16px 0;font-size:13px}th{background:#FF6B00;color:white;padding:8px 12px;text-align:center}td{padding:6px 12px;text-align:center;border-bottom:1px solid #ddd;font-family:'Courier New',monospace}td:first-child{text-align:left;font-family:Arial}tr.spec td{color:#FF4444;font-weight:700}td.oos{color:#FF4444;font-weight:700;background:#FFF0F0}.meta{color:#666;font-size:12px;margin:4px 0}.warning{background:#FFF6D8;border:1px solid #F0C24A;padding:8px 12px;margin:10px 0;font-size:12px}.footer{margin-top:40px;padding-top:12px;border-top:1px solid #ccc;color:#999;font-size:11px;text-align:center}</style></head><body>
-<h1>FOX LL Sizing Report</h1>
+<style>body{font-family:Helvetica,Arial,sans-serif;max-width:1200px;margin:0 auto;padding:20px;color:#222}h1,h2{color:#222;text-transform:uppercase;letter-spacing:0.02em}h1{border-bottom:3px solid #FF6600;padding-bottom:10px;font-weight:800}h2{font-weight:700;margin-top:28px}table{width:100%;border-collapse:collapse;margin:16px 0;font-size:13px}th{background:#222;color:#FFF;padding:8px 12px;text-align:center;text-transform:uppercase;letter-spacing:0.08em;font-size:11px}td{padding:6px 12px;text-align:center;border-bottom:1px solid #EBEBEB;font-family:'Courier New',monospace}td:first-child{text-align:left;font-family:Helvetica,Arial,sans-serif;font-weight:600}tr.spec td{color:#FF4444;font-weight:700}td.oos{color:#FF4444;font-weight:700;background:#FFF0F0}.meta{color:#7A7A7A;font-size:12px;margin:4px 0}.warning{background:#FDF6E3;border:1px solid #C8881E;border-left:3px solid #C8881E;padding:8px 12px;margin:10px 0;font-size:12px}.footer{margin-top:40px;padding-top:12px;border-top:1px solid #EBEBEB;color:#7A7A7A;font-size:11px;text-align:center;text-transform:uppercase;letter-spacing:0.10em}</style></head><body>
+<h1>FOX · LL Sizing Report</h1>
 <p class="meta">Generated: ${escapeHtml(generated)} | Spec: 605-04-262 Rev G/02 | Bore Size: ${escapeHtml(size)} (${spec.lower.toFixed(4)}" ~ ${spec.upper.toFixed(4)}")</p>`;
 
   allBatches.forEach((batch, index) => {
@@ -698,7 +700,7 @@ async function exportReport() {
     });
     html += "</tbody></table>";
   });
-  html += '<div class="footer">FOX Factory - LL Sizing Report | Spec: 605-04-262 Rev G/02 | Data Source: Calypso CMM</div></body></html>';
+  html += `<div class="footer">© ${new Date().getFullYear()} FOX Factory, Inc. · LL Sizing Report · Spec 605-04-262 Rev G/02 · Source: Calypso CMM</div></body></html>`;
 
   const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
   const response = await fetch(`${API}/api/save-report`, {
