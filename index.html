@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="zh-TW" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LL Sizing Report - FOX</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<header class="header">
+<div class="header-inner">
+  <div class="header-brand">
+    <div class="header-logo">FOX</div>
+    <div><div class="header-title">LL Sizing Report</div><div class="header-subtitle">Lower Leg Installed Bushing Bore Analysis</div></div>
+  </div>
+  <div style="display:flex;align-items:center;gap:12px;">
+    <button id="themeToggle" class="theme-toggle-btn" title="Toggle Theme"><span class="theme-icon-dark">D</span><span class="theme-icon-light">L</span></button>
+    <div id="statusIndicator" class="status-pill ready"><span style="font-size:10px">●</span><span>Ready</span></div>
+  </div>
+</div>
+</header>
+
+<main class="main-content">
+<div class="import-panel">
+  <div id="importHeader" class="import-panel-header">
+    <span>Import Batch Folder</span>
+    <span class="toggle-arrow">▼</span>
+  </div>
+  <div id="importBody" class="import-panel-body">
+    <div class="import-row">
+      <label class="control-label">Folder Path</label>
+      <div style="display:flex;gap:8px;flex:1">
+        <input id="folderPath" class="import-input" placeholder="Click Browse or paste path...">
+        <button id="browseBtn" class="btn btn-secondary">Browse...</button>
+      </div>
+    </div>
+    <div id="browserPanel" style="display:none" class="browser-panel">
+      <div id="browserCrumb" class="browser-crumb"></div>
+      <div id="browserList" class="browser-list"></div>
+    </div>
+    <div class="import-row">
+      <label class="control-label">Batch Type</label>
+      <div class="radio-group">
+        <label class="radio-label"><input type="radio" name="batchType" value="raw"> Raw Material (mm)</label>
+        <label class="radio-label"><input type="radio" name="batchType" value="bushing_unsized"> Bushing ID - unsized (inch)</label>
+        <label class="radio-label"><input type="radio" name="batchType" value="bushing_sized" checked> Bushing ID - sized by
+          <input id="sizerSize" class="sizer-input" type="text" value="1.34050" placeholder="x.xxxxx"> " sizer</label>
+      </div>
+    </div>
+    <div class="import-row" style="justify-content:flex-end;gap:12px">
+      <button id="importBtn" class="btn btn-primary">+ Add Batch</button>
+    </div>
+    <div id="batchTableWrap" style="display:none">
+      <table class="batch-table" id="batchTable"><thead><tr><th>#</th><th>Folder</th><th>Type</th><th>Files</th><th>Status</th><th></th></tr></thead><tbody></tbody></table>
+    </div>
+  </div>
+</div>
+
+<div class="controls-bar">
+  <div class="control-group">
+    <label class="control-label" for="sizeSelect">Bore Size Spec</label>
+    <select id="sizeSelect" class="control-select">
+      <option value="32mm">32mm - 1.2610~1.2635"</option>
+      <option value="34mm" selected>34mm - 1.3396~1.3421"</option>
+      <option value="36mm">36mm - 1.4180~1.4205"</option>
+      <option value="38mm">38mm - 1.4965~1.4990"</option>
+      <option value="40mm">40mm - 1.5760~1.5785"</option>
+    </select>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Spec (605-04-262)</label>
+    <div id="specDisplay" class="chart-badge">1.3396" ~ 1.3421"</div>
+  </div>
+  <div class="control-group" style="margin-left:auto">
+    <button id="exportBtn" class="btn btn-accent">Export Report</button>
+  </div>
+</div>
+
+<div id="chartsContainer" class="charts-grid">
+  <div class="empty-state"><div class="empty-state-icon">No Data</div><div class="empty-state-text">No batches imported yet. Use the Import Panel above to add folders.</div></div>
+</div>
+</main>
+
+<footer class="footer">FOX Factory - LL Sizing Report Dashboard &nbsp;|&nbsp; Spec: 605-04-262 Rev G/02 &nbsp;|&nbsp; Data Source: Calypso CMM</footer>
+
+<script>
+const API = "";
+const POSITIONS = ["AS U", "AS L", "DS U", "DS L"];
+const POS_KEYS = ["AS_U", "AS_L", "DS_U", "DS_L"];
+const MM2IN = 1 / 25.4;
+const IN2MM = 25.4;
+const COLORS = [
+  {border:"#4A90D9"}, {border:"#F5A623"}, {border:"#B8B8C0"}, {border:"#50C878"}, {border:"#E06090"},
+];
+
+let specsData = {};
+let allBatches = [];
+let allBatchData = {};
+let batchWarnings = {};
+let chartInstances = {};
+let chartTitles = {};
+let chartDisplayUnits = {};
+
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function setStatus(text, mode="ready") {
+  const status = document.getElementById("statusIndicator");
+  status.className = `status-pill ${mode}`;
+  status.lastElementChild.textContent = text;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, ch => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[ch]));
+}
+
+function getTheme() {
+  return document.documentElement.getAttribute("data-theme") || "dark";
+}
+
+function toggleTheme() {
+  document.documentElement.setAttribute("data-theme", getTheme() === "dark" ? "light" : "dark");
+  renderAllCharts();
+}
+
+function tc() {
+  const dark = getTheme() === "dark";
+  return {
+    text: dark ? "#E8E8F0" : "#1A1A2E",
+    text2: dark ? "#8888A0" : "#555570",
+    grid: dark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.08)",
+    ptBorder: dark ? "#12121A" : "#FFF",
+    ttBg: dark ? "rgba(18,18,26,0.95)" : "rgba(255,255,255,0.95)",
+    ttBody: dark ? "#E8E8F0" : "#1A1A2E",
+  };
+}
+
+document.addEventListener("DOMContentLoaded", async () => {
+  document.getElementById("themeToggle").addEventListener("click", toggleTheme);
+  document.getElementById("importHeader").addEventListener("click", () => document.getElementById("importBody").classList.toggle("collapsed"));
+  document.getElementById("browseBtn").addEventListener("click", () => browseFolders());
+  document.getElementById("importBtn").addEventListener("click", importBatch);
+  document.getElementById("exportBtn").addEventListener("click", exportReport);
+  document.getElementById("sizeSelect").addEventListener("change", onSizeChange);
+  await loadSpecs();
+  await loadBatches();
+});
+
+async function loadSpecs() {
+  const response = await fetch(`${API}/api/specs`);
+  specsData = (await response.json()).specs || {};
+}
+
+async function loadBatches() {
+  setStatus("Loading", "loading");
+  try {
+    const response = await fetch(`${API}/api/batches`);
+    const data = await response.json();
+    allBatches = data.batches || [];
+    const promises = allBatches.map(async batch => {
+      const dataResponse = await fetch(`${API}/api/data/${encodeURIComponent(batch.id)}`);
+      const batchData = await dataResponse.json();
+      allBatchData[batch.id] = batchData.parts || [];
+      batchWarnings[batch.id] = batchData.warnings || [];
+      if (!(batch.id in chartDisplayUnits)) chartDisplayUnits[batch.id] = batch.type === "raw" ? "mm" : "inch";
+    });
+    await Promise.all(promises);
+    updateBatchTable();
+    renderAllCharts();
+    setStatus("Ready");
+  } catch (error) {
+    console.error(error);
+    setStatus("Error", "loading");
+  }
+}
+
+function onSizeChange() {
+  const spec = specsData[document.getElementById("sizeSelect").value];
+  if (spec) document.getElementById("specDisplay").textContent = `${spec.lower.toFixed(4)}" ~ ${spec.upper.toFixed(4)}"`;
+  renderAllCharts();
+}
+
+function getSpec() {
+  return specsData[document.getElementById("sizeSelect").value] || specsData["34mm"];
+}
+
+function cv(value, from, to) {
+  if (from === to || value == null) return value;
+  return from === "mm" ? value * MM2IN : value * IN2MM;
+}
+
+function getDP(parts, sourceUnit, displayUnit) {
+  return parts.map(part => {
+    const converted = {};
+    POS_KEYS.forEach(key => converted[key] = cv(part.positions[key], sourceUnit, displayUnit));
+    return converted;
+  });
+}
+
+async function browseFolders(path) {
+  const panel = document.getElementById("browserPanel");
+  panel.style.display = "block";
+  const url = path ? `${API}/api/browse?path=${encodeURIComponent(path)}` : `${API}/api/browse`;
+  try {
+    const response = await fetch(url);
+    const data = await response.json();
+    if (!response.ok) {
+      alert(data.error || "Browse failed");
+      return;
+    }
+    document.getElementById("folderPath").value = data.current_path;
+    renderBrowserCrumb(data.current_path, data.parent_path);
+    renderBrowserList(data.folders || []);
+  } catch (error) {
+    alert(`Browse failed: ${error}`);
+  }
+}
+
+function renderBrowserCrumb(currentPath, parentPath) {
+  const crumb = document.getElementById("browserCrumb");
+  crumb.replaceChildren();
+  const up = el("span", "crumb-item", "Up ..");
+  up.addEventListener("click", () => browseFolders(parentPath));
+  const current = el("span", "", ` ${currentPath}`);
+  current.style.color = "var(--text-secondary)";
+  crumb.append(up, current);
+}
+
+function renderBrowserList(folders) {
+  const list = document.getElementById("browserList");
+  list.replaceChildren();
+  folders.forEach(folder => {
+    const row = el("div", "browser-item");
+    const name = el("span", "browser-folder", folder.name);
+    name.addEventListener("click", () => browseFolders(folder.path));
+    const count = el("span", "browser-xls", `${folder.xls_count} xls`);
+    const select = el("button", "btn btn-sm", "Select");
+    select.addEventListener("click", () => selectFolder(folder.path));
+    row.append(name, count, select);
+    list.appendChild(row);
+  });
+}
+
+function selectFolder(path) {
+  document.getElementById("folderPath").value = path;
+  document.getElementById("browserPanel").style.display = "none";
+}
+
+async function importBatch() {
+  const path = document.getElementById("folderPath").value.trim();
+  const type = document.querySelector("input[name=batchType]:checked")?.value;
+  if (!path) { alert("Please select a folder path"); return; }
+  if (!type) { alert("Please select batch type"); return; }
+
+  const body = {path, type};
+  if (type === "bushing_sized") {
+    const sizer = Number.parseFloat(document.getElementById("sizerSize").value);
+    if (!Number.isFinite(sizer)) { alert("Please enter sizer size"); return; }
+    body.sizer_size = sizer;
+  }
+
+  const response = await fetch(`${API}/api/import`, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(body),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    alert(data.error || "Import failed");
+    return;
+  }
+  document.getElementById("folderPath").value = "";
+  await loadBatches();
+}
+
+async function deleteBatch(id) {
+  if (!confirm(`Delete batch: ${id}?`)) return;
+  const response = await fetch(`${API}/api/batch/${encodeURIComponent(id)}`, {method: "DELETE"});
+  if (!response.ok) {
+    const data = await response.json();
+    alert(data.error || "Delete failed");
+    return;
+  }
+  delete allBatchData[id];
+  delete batchWarnings[id];
+  delete chartDisplayUnits[id];
+  delete chartTitles[id];
+  await loadBatches();
+}
+
+function updateBatchTable() {
+  const wrap = document.getElementById("batchTableWrap");
+  const tbody = document.querySelector("#batchTable tbody");
+  tbody.replaceChildren();
+  if (!allBatches.length) {
+    wrap.style.display = "none";
+    return;
+  }
+  wrap.style.display = "block";
+  allBatches.forEach((batch, index) => {
+    const row = el("tr");
+    const warnings = batchWarnings[batch.id] || [];
+    const deleteButton = el("button", "btn btn-danger btn-sm", "Delete");
+    deleteButton.addEventListener("click", () => deleteBatch(batch.id));
+    const folderCell = el("td", "", batch.folder);
+    folderCell.title = batch.path || "";
+    row.append(
+      el("td", "", String(index + 1)),
+      folderCell,
+      el("td", "", batch.label),
+      el("td", "", String(batch.file_count)),
+      el("td", warnings.length ? "warning-text" : "", warnings.length ? `${warnings.length} warning(s)` : "OK"),
+      el("td")
+    );
+    row.lastElementChild.appendChild(deleteButton);
+    tbody.appendChild(row);
+  });
+}
+
+function onTitleClick(index) {
+  const input = document.getElementById(`ti-${index}`);
+  const display = document.getElementById(`td-${index}`);
+  if (!input || !display) return;
+  input.value = display.textContent;
+  input.style.display = "block";
+  display.style.display = "none";
+  input.focus();
+  input.select();
+}
+
+function onTitleBlur(index) {
+  const input = document.getElementById(`ti-${index}`);
+  const display = document.getElementById(`td-${index}`);
+  if (!input || !display) return;
+  const title = input.value.trim();
+  if (title) {
+    const batch = allBatches[index];
+    if (batch) chartTitles[batch.id] = title;
+    display.textContent = title;
+  }
+  input.style.display = "none";
+  display.style.display = "inline";
+}
+
+function onTitleKey(event, index) {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    onTitleBlur(index);
+  } else if (event.key === "Escape") {
+    const input = document.getElementById(`ti-${index}`);
+    const display = document.getElementById(`td-${index}`);
+    if (input) input.style.display = "none";
+    if (display) display.style.display = "inline";
+  }
+}
+
+function toggleUnit(id) {
+  chartDisplayUnits[id] = chartDisplayUnits[id] === "mm" ? "inch" : "mm";
+  renderAllCharts();
+}
+
+function renderAllCharts() {
+  const container = document.getElementById("chartsContainer");
+  container.replaceChildren();
+  Object.values(chartInstances).forEach(chart => chart.destroy());
+  chartInstances = {};
+
+  if (!allBatches.length) {
+    const empty = el("div", "empty-state");
+    empty.append(el("div", "empty-state-icon", "No Data"), el("div", "empty-state-text", "No batches imported yet."));
+    container.appendChild(empty);
+    return;
+  }
+
+  allBatches.forEach((batch, index) => {
+    const parts = allBatchData[batch.id];
+    if (!parts || !parts.length) return;
+    const isRaw = batch.type === "raw";
+    const sourceUnit = isRaw ? "mm" : "inch";
+    const displayUnit = chartDisplayUnits[batch.id] || sourceUnit;
+    const title = chartTitles[batch.id] || batch.folder.replace(/^\d+-/, "");
+    const card = buildChartCard(batch, index, parts, sourceUnit, displayUnit, title);
+    container.appendChild(card);
+    createChart(`ch-${index}`, parts, batch, displayUnit);
+    createTable(`tb-${index}`, parts, batch, displayUnit);
+  });
+}
+
+function buildChartCard(batch, index, parts, sourceUnit, displayUnit, title) {
+  const card = el("div", "chart-card");
+  const header = el("div", "chart-header");
+  const titleGroup = el("div", "chart-title-group");
+  const chartTitle = el("div", "chart-title");
+  const typeSpan = el("span", "batch-type", batch.label || (batch.type === "raw" ? "Raw Material" : "Bushing ID"));
+  chartTitle.append(typeSpan, document.createTextNode(` - ${batch.folder}`));
+  titleGroup.append(chartTitle, el("div", "chart-subtitle", `${parts.length} parts | Source: ${sourceUnit} | Date: ${batch.date_code}${batch.sizer_size ? ` | Sizer: ${batch.sizer_size}"` : ""}`));
+  const unitButton = el("button", "unit-toggle-btn", displayUnit.toUpperCase());
+  unitButton.addEventListener("click", () => toggleUnit(batch.id));
+  header.append(titleGroup, unitButton);
+
+  const body = el("div", "chart-body");
+  const editRow = el("div", "editable-title-row");
+  const titleDisplay = el("span", "editable-title", title);
+  titleDisplay.id = `td-${index}`;
+  titleDisplay.title = "Click to edit";
+  titleDisplay.addEventListener("click", () => onTitleClick(index));
+  const titleInput = el("input", "editable-title-input");
+  titleInput.id = `ti-${index}`;
+  titleInput.style.display = "none";
+  titleInput.addEventListener("blur", () => onTitleBlur(index));
+  titleInput.addEventListener("keydown", event => onTitleKey(event, index));
+  editRow.append(titleDisplay, titleInput, el("span", "edit-hint", "edit"));
+  const canvasWrap = el("div", "chart-canvas-container");
+  const canvas = el("canvas");
+  canvas.id = `ch-${index}`;
+  canvasWrap.appendChild(canvas);
+  body.append(editRow, canvasWrap);
+
+  const warnings = batchWarnings[batch.id] || [];
+  if (warnings.length) body.appendChild(buildWarningsPanel(warnings));
+
+  const tableWrap = el("div", "data-table-wrapper");
+  const table = el("table", "data-table");
+  table.id = `tb-${index}`;
+  tableWrap.appendChild(table);
+  card.append(header, body, tableWrap);
+  return card;
+}
+
+function buildWarningsPanel(warnings) {
+  const panel = el("div", "warning-panel");
+  panel.appendChild(el("div", "warning-title", `Parsing warnings: ${warnings.length}`));
+  warnings.slice(0, 5).forEach(warning => {
+    const prefix = warning.file ? `${warning.file}: ` : "";
+    panel.appendChild(el("div", "warning-line", `${prefix}${warning.message}`));
+  });
+  if (warnings.length > 5) panel.appendChild(el("div", "warning-line", `... ${warnings.length - 5} more`));
+  return panel;
+}
+
+function createChart(canvasId, parts, batch, displayUnit) {
+  const ctx = document.getElementById(canvasId).getContext("2d");
+  const isRaw = batch.type === "raw";
+  const sourceUnit = isRaw ? "mm" : "inch";
+  const spec = getSpec();
+  const theme = tc();
+  const dp = getDP(parts, sourceUnit, displayUnit);
+  const isInch = displayUnit === "inch";
+  const decimals = isInch ? 5 : 4;
+  const datasets = dp.map((part, index) => {
+    const color = COLORS[index % COLORS.length];
+    return {
+      label: `${index + 1}`,
+      data: POS_KEYS.map(key => part[key] != null ? Number(part[key].toFixed(7)) : null),
+      borderColor: color.border,
+      backgroundColor: color.border,
+      borderWidth: 2,
+      pointRadius: 5,
+      pointHoverRadius: 7,
+      pointBackgroundColor: color.border,
+      pointBorderColor: theme.ptBorder,
+      pointBorderWidth: 2,
+      tension: 0.1,
+      fill: false,
+    };
+  });
+
+  const showSpec = !isRaw;
+  let specUpper = 0;
+  let specMid = 0;
+  let specLower = 0;
+  if (showSpec) {
+    specUpper = cv(spec.upper, "inch", displayUnit);
+    specMid = cv(spec.mid, "inch", displayUnit);
+    specLower = cv(spec.lower, "inch", displayUnit);
+    datasets.push({label:"Max", data:Array(4).fill(specUpper), borderColor:"#FF4444", borderWidth:2, borderDash:[8,4], pointRadius:0, pointHoverRadius:0, fill:false, order:10});
+    datasets.push({label:"Mid", data:Array(4).fill(specMid), borderColor:"#FF4444", borderWidth:1.5, borderDash:[4,4], pointRadius:0, pointHoverRadius:0, fill:false, order:10});
+    datasets.push({label:"Min", data:Array(4).fill(specLower), borderColor:"#FF4444", borderWidth:2, borderDash:[8,4], pointRadius:0, pointHoverRadius:0, fill:false, order:10});
+  }
+
+  const values = [];
+  dp.forEach(part => POS_KEYS.forEach(key => { if (part[key] != null) values.push(part[key]); }));
+  if (showSpec) values.push(specUpper, specLower);
+  const min = values.length ? Math.min(...values) : 0;
+  const max = values.length ? Math.max(...values) : 1;
+  const pad = (max - min) * 0.3 || 0.001;
+
+  const plugins = [];
+  if (showSpec) {
+    plugins.push({
+      id: `spec-annotation-${canvasId}`,
+      afterDraw(chart) {
+        const {ctx: c, scales} = chart;
+        const yScale = scales.y;
+        const right = scales.x.right;
+        const dark = getTheme() === "dark";
+        const dc = isInch ? 4 : 2;
+        [[specUpper, "Max", -12], [specMid, "Mid", 0], [specLower, "Min", 12]].forEach(([value, label, offset]) => {
+          const y = yScale.getPixelForValue(value);
+          if (y < yScale.top || y > yScale.bottom) return;
+          const text = `${label}: ${value.toFixed(dc)}`;
+          c.save();
+          c.font = '700 11px "JetBrains Mono"';
+          c.textAlign = "right";
+          c.textBaseline = "middle";
+          c.strokeStyle = dark ? "#0A0A0F" : "#FFF";
+          c.lineWidth = 3;
+          c.strokeText(text, right - 8, y + offset);
+          c.fillStyle = "#FF4444";
+          c.fillText(text, right - 8, y + offset);
+          c.restore();
+        });
+      },
+    });
+  }
+
+  chartInstances[canvasId] = new Chart(ctx, {
+    type: "line",
+    data: {labels: POSITIONS, datasets},
+    plugins,
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: {mode: "index", intersect: false},
+      plugins: {
+        title: {display: false},
+        legend: {
+          position: "top",
+          labels: {
+            color: theme.text2,
+            font: {size: 11, family: "Inter"},
+            padding: 12,
+            usePointStyle: true,
+            pointStyle: "line",
+          },
+        },
+        tooltip: {
+          backgroundColor: theme.ttBg,
+          borderColor: "rgba(255,107,0,0.3)",
+          borderWidth: 1,
+          titleColor: "#FF8C33",
+          bodyColor: theme.ttBody,
+          callbacks: {label: context => `  ${context.dataset.label}: ${context.parsed.y.toFixed(decimals)}${displayUnit === "inch" ? '"' : "mm"}`},
+        },
+      },
+      scales: {
+        x: {grid: {color: theme.grid}, ticks: {color: theme.text2, font: {size: 12, weight: "600", family: "Inter"}}},
+        y: {min: min - pad, max: max + pad, grid: {color: theme.grid}, ticks: {color: theme.text2, font: {size: 10, family: "JetBrains Mono"}, callback: value => isInch ? value.toFixed(4) : value.toFixed(2)}},
+      },
+      animation: {duration: 800, easing: "easeOutQuart"},
+    },
+  });
+}
+
+function createTable(tableId, parts, batch, displayUnit) {
+  const table = document.getElementById(tableId);
+  table.replaceChildren();
+  const isRaw = batch.type === "raw";
+  const sourceUnit = isRaw ? "mm" : "inch";
+  const spec = getSpec();
+  const decimals = displayUnit === "inch" ? 5 : 4;
+  const dp = getDP(parts, sourceUnit, displayUnit);
+  const showSpec = !isRaw;
+  let specUpper = 0;
+  let specMid = 0;
+  let specLower = 0;
+  if (showSpec) {
+    specUpper = cv(spec.upper, "inch", displayUnit);
+    specMid = cv(spec.mid, "inch", displayUnit);
+    specLower = cv(spec.lower, "inch", displayUnit);
+  }
+
+  const thead = el("thead");
+  const header = el("tr");
+  ["", "AS U", "AS L", "DS U", "DS L"].forEach(label => header.appendChild(el("th", "", label)));
+  thead.appendChild(header);
+  const tbody = el("tbody");
+
+  if (showSpec) {
+    [
+      ["spec-row spec-max", "- Max", specUpper],
+      ["spec-row spec-mid", "-- Mid", specMid],
+      ["spec-row spec-min", "- Min", specLower],
+    ].forEach(([className, label, value]) => {
+      const row = el("tr", className);
+      row.appendChild(el("td", "", label));
+      POS_KEYS.forEach(() => row.appendChild(el("td", "", value.toFixed(decimals))));
+      tbody.appendChild(row);
+    });
+  }
+
+  dp.forEach((part, index) => {
+    const row = el("tr", `part-${index + 1}`);
+    row.appendChild(el("td", "", String(index + 1)));
+    POS_KEYS.forEach(key => {
+      const value = part[key];
+      const className = showSpec && value != null && (value < specLower || value > specUpper) ? "out-of-spec" : "";
+      row.appendChild(el("td", className, value != null ? value.toFixed(decimals) : "-"));
+    });
+    tbody.appendChild(row);
+  });
+  table.append(thead, tbody);
+}
+
+async function exportReport() {
+  const spec = getSpec();
+  const size = document.getElementById("sizeSelect").value;
+  const generated = new Date().toLocaleString();
+  let html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>LL Sizing Report</title>
+<style>body{font-family:Arial,sans-serif;max-width:1200px;margin:0 auto;padding:20px;color:#333}h1,h2{color:#FF6B00}h1{border-bottom:3px solid #FF6B00;padding-bottom:10px}table{width:100%;border-collapse:collapse;margin:16px 0;font-size:13px}th{background:#FF6B00;color:white;padding:8px 12px;text-align:center}td{padding:6px 12px;text-align:center;border-bottom:1px solid #ddd;font-family:'Courier New',monospace}td:first-child{text-align:left;font-family:Arial}tr.spec td{color:#FF4444;font-weight:700}td.oos{color:#FF4444;font-weight:700;background:#FFF0F0}.meta{color:#666;font-size:12px;margin:4px 0}.warning{background:#FFF6D8;border:1px solid #F0C24A;padding:8px 12px;margin:10px 0;font-size:12px}.footer{margin-top:40px;padding-top:12px;border-top:1px solid #ccc;color:#999;font-size:11px;text-align:center}</style></head><body>
+<h1>FOX LL Sizing Report</h1>
+<p class="meta">Generated: ${escapeHtml(generated)} | Spec: 605-04-262 Rev G/02 | Bore Size: ${escapeHtml(size)} (${spec.lower.toFixed(4)}" ~ ${spec.upper.toFixed(4)}")</p>`;
+
+  allBatches.forEach((batch, index) => {
+    const parts = allBatchData[batch.id];
+    if (!parts || !parts.length) return;
+    const isRaw = batch.type === "raw";
+    const sourceUnit = isRaw ? "mm" : "inch";
+    const displayUnit = chartDisplayUnits[batch.id] || sourceUnit;
+    const dp = getDP(parts, sourceUnit, displayUnit);
+    const decimals = displayUnit === "inch" ? 5 : 4;
+    const showSpec = !isRaw;
+    let specUpper = 0;
+    let specMid = 0;
+    let specLower = 0;
+    if (showSpec) {
+      specUpper = cv(spec.upper, "inch", displayUnit);
+      specMid = cv(spec.mid, "inch", displayUnit);
+      specLower = cv(spec.lower, "inch", displayUnit);
+    }
+    const title = chartTitles[batch.id] || batch.folder.replace(/^\d+-/, "");
+    html += `<h2>${escapeHtml(batch.label)} - ${escapeHtml(title)}</h2>`;
+    html += `<p class="meta">${parts.length} parts | Unit: ${escapeHtml(displayUnit)} | Date: ${escapeHtml(batch.date_code)}${batch.sizer_size ? ` | Sizer: ${escapeHtml(batch.sizer_size)}"` : ""}</p>`;
+
+    const warnings = batchWarnings[batch.id] || [];
+    if (warnings.length) {
+      html += `<div class="warning"><strong>Parsing warnings: ${warnings.length}</strong>`;
+      warnings.slice(0, 8).forEach(warning => {
+        const prefix = warning.file ? `${warning.file}: ` : "";
+        html += `<div>${escapeHtml(prefix + warning.message)}</div>`;
+      });
+      html += "</div>";
+    }
+
+    const chart = chartInstances[`ch-${index}`];
+    if (chart) {
+      try {
+        const saved = {
+          xGrid: chart.options.scales.x.grid.color,
+          yGrid: chart.options.scales.y.grid.color,
+          xTick: chart.options.scales.x.ticks.color,
+          yTick: chart.options.scales.y.ticks.color,
+          legend: chart.options.plugins.legend.labels.color,
+          plugins: chart.config._config.plugins,
+        };
+        chart.options.scales.x.grid.color = "rgba(0,0,0,0.08)";
+        chart.options.scales.y.grid.color = "rgba(0,0,0,0.08)";
+        chart.options.scales.x.ticks.color = "#333";
+        chart.options.scales.y.ticks.color = "#333";
+        chart.options.plugins.legend.labels.color = "#333";
+        chart.config._config.plugins = [];
+        chart.update("none");
+        const imageData = chart.toBase64Image("image/png", 3);
+        chart.config._config.plugins = saved.plugins;
+        chart.options.scales.x.grid.color = saved.xGrid;
+        chart.options.scales.y.grid.color = saved.yGrid;
+        chart.options.scales.x.ticks.color = saved.xTick;
+        chart.options.scales.y.ticks.color = saved.yTick;
+        chart.options.plugins.legend.labels.color = saved.legend;
+        chart.update("none");
+        html += `<img src="${imageData}" style="width:100%;max-width:1100px;margin:12px 0;border:1px solid #eee;border-radius:6px;">`;
+      } catch (error) {
+        console.warn("Chart capture failed:", error);
+      }
+    }
+
+    html += "<table><thead><tr><th></th><th>AS U</th><th>AS L</th><th>DS U</th><th>DS L</th></tr></thead><tbody>";
+    if (showSpec) {
+      html += `<tr class="spec"><td>- Max</td>${POS_KEYS.map(() => `<td>${specUpper.toFixed(decimals)}</td>`).join("")}</tr>`;
+      html += `<tr class="spec"><td>-- Mid</td>${POS_KEYS.map(() => `<td>${specMid.toFixed(decimals)}</td>`).join("")}</tr>`;
+      html += `<tr class="spec"><td>- Min</td>${POS_KEYS.map(() => `<td>${specLower.toFixed(decimals)}</td>`).join("")}</tr>`;
+    }
+    dp.forEach((part, partIndex) => {
+      html += `<tr><td style="color:${COLORS[partIndex % COLORS.length].border};font-weight:700">${partIndex + 1}</td>`;
+      POS_KEYS.forEach(key => {
+        const value = part[key];
+        const oos = showSpec && value != null && (value < specLower || value > specUpper);
+        html += `<td${oos ? ' class="oos"' : ""}>${value != null ? value.toFixed(decimals) : "-"}</td>`;
+      });
+      html += "</tr>";
+    });
+    html += "</tbody></table>";
+  });
+  html += '<div class="footer">FOX Factory - LL Sizing Report | Spec: 605-04-262 Rev G/02 | Data Source: Calypso CMM</div></body></html>';
+
+  const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  const response = await fetch(`${API}/api/save-report`, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({html, filename: `Sizing_Report_${dateStr}.html`}),
+  });
+  const data = await response.json();
+  if (response.ok) {
+    alert(`報告已儲存\n\n檔案：${data.filename}\n位置：${data.path}`);
+    fetch(`${API}/api/open-folder?path=${encodeURIComponent(data.folder)}`);
+  } else {
+    alert(`儲存失敗：${data.error || "Unknown error"}`);
+  }
+}
+</script>
+</body>
+</html>

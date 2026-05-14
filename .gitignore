@@ -1,0 +1,26 @@
+# Python/runtime artifacts
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Generated reports
+Reports/
+
+# Local app state and scratch files
+batch_registry.json
+test_dl.html
+
+# Measurement and proprietary source data
+SIZER STUDY/
+*.xls
+*.xlsx
+*.xlsm
+*.pdf
+
+# Office temporary lock files
+~$*
+
+# Local OS/editor noise
+.DS_Store
+Thumbs.db
